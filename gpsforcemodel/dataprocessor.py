@@ -256,15 +256,15 @@ class DataProcessor:
 
         x__ = np.load(
             f'{self.data_dir}/'
-            f'finkeldey_sfb876_kf10_ae35_nr{number:03d}_features_aggreg.npy'.format(filename)
-        )
+            f'finkeldey_sfb876_kf10_ae35_nr{number:03d}_features.npy'.format(filename)
+        )[:, :self.input_size]
         rays = np.load(
             f'{self.data_dir}/'
-            f'finkeldey_sfb876_kf10_ae35_nr{number:03d}_rays_aggreg.npy'.format(filename)
+            f'finkeldey_sfb876_kf10_ae35_nr{number:03d}_rays.npy'.format(filename)
         )
         y__ = np.load(
             f'{self.data_dir}/'
-            f'finkeldey_sfb876_kf10_ae35_nr{number:03d}_target_aggreg.npy'.format(filename)
+            f'finkeldey_sfb876_kf10_ae35_nr{number:03d}_target.npy'.format(filename)
         )
 
         # print(np.shape(x__))
@@ -298,7 +298,7 @@ class DataProcessor:
         # Store features of all force samples in one image-like structure
         # As a consequence, the shape of each batch should be (B, force_samples, input_size)
 
-        substeps = self.parameter_values[number][-1] // 5
+        substeps = self.parameter_values[number][-1]
 
         # Scale and reshape into images of size (force_samples, input_size)
         x__ = np.reshape(
