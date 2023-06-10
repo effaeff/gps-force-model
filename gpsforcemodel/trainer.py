@@ -11,6 +11,8 @@ class Trainer(BasicTrainer):
     """Wrapper class for force trainer"""
     def __init__(self, config, model, preprocessor):
         BasicTrainer.__init__(self, config, model, preprocessor)
+        self.output_size = config['output_size']
+        self.nb_models = config.get('nb_models', 1)
 
     def learn_from_epoch(self, epoch_idx):
         """Training method"""
@@ -79,9 +81,19 @@ class Trainer(BasicTrainer):
     def predict(self, inp):
         """Capsuled prediction function"""
         inp = torch.Tensor(inp).to(DEVICE)
-        # print(inp.size())
-        # quit()
-        pred_out = self.model(inp)
+        nb_models = self.config.get('nb_models', 1)
+        force_samples = self.config['force_samples']
+        if nb_models > 1:
+            pred_out = torch.empty(
+                len(inp),
+                force_samples,
+                nb_models # Multiple models are assumed to predict exactly one output for now
+            ).to(DEVICE)
+            for idx, __ in enumerate(self.model):
+                local_pred = self.model[idx](inp)
+                pred_out[:, :, idx] = local_pred
+        else:
+            pred_out = self.model(inp)
         return pred_out
 
     def postprocess(self, data, rays, batch_idx):
