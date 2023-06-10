@@ -17,6 +17,17 @@ class ForceModel(BasicModel):
 
         channels = [32, 64, 128]
 
+        ########################
+        #### Simple version ####
+        ########################
+        # self.conv1 = nn.Conv2d(1, 32, kernel_size=kernel_size, padding=padding)
+        # self.conv2 = nn.Conv2d(32, 64, kernel_size=kernel_size, padding=padding)
+        # self.conv3 = nn.Conv2d(64, 64, kernel_size=kernel_size, padding=padding)
+
+        # self.fc1 = nn.Linear(self.force_samples * self.output_size * 64, 512)
+        # self.fc2 = nn.Linear(512, self.force_samples * self.output_size)
+
+        ########################
         layers = []
         in_chn = 1
         for chn in channels:
@@ -43,3 +54,17 @@ class ForceModel(BasicModel):
         pred_out = reduce(lambda x, y: y(x), self.encoder, inp)
         pred_out = self.fc_layer(pred_out)
         return torch.squeeze(pred_out)
+        ########################
+        #### Simple version ####
+        ########################
+        # pred_out = self.act(self.conv1(inp))
+        # pred_out = self.act(self.conv2(pred_out))
+        # pred_out = self.act(self.conv3(pred_out))
+
+        # pred_out = pred_out.view(pred_out.size(0), -1)
+
+        # pred_out = self.act(self.fc1(pred_out))
+        # pred_out = self.fc2(pred_out)
+
+        # pred_out = pred_out.view(-1, self.force_samples, self.output_size)
+        ########################
