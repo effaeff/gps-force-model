@@ -14,8 +14,23 @@ class ForceModel(BasicModel):
 
         self.kernel_size = config.get('kernel_size', 3)
         self.padding = config.get('padding', 1)
+        self.channels = config.get('channels', [32, 64, 128])
+        self.force_samples = config['force_samples']
 
-        channels = [32, 64, 128]
+        self.encoder = self.make_layers(1, self.channels)
+        self.decoder = self.make_layers(
+            self.channels[-1],
+            (list(reversed(self.channels))[1:] + [1])
+        )
+
+        self.bn = nn.ModuleList(
+            [
+                nn.BatchNorm2d(self.channels[1]),
+                nn.BatchNorm2d(self.channels[0])
+            ]
+        )
+
+        # self.act = getattr(nn, self.config.get('activation', 'ReLU'))(inplace=True)
 
         ########################
         #### Simple version ####
@@ -28,32 +43,47 @@ class ForceModel(BasicModel):
         # self.fc2 = nn.Linear(512, self.force_samples * self.output_size)
 
         ########################
+
+    def make_layers(self, in_chn, channels):
+        """Outsourced method to build layers of a network block"""
         layers = []
-        in_chn = 1
-        for chn in channels:
+        for chn_idx, chn in enumerate(channels):
             layers += [
                 nn.Conv2d(in_chn, chn, self.kernel_size, padding=self.padding),
                 nn.BatchNorm2d(chn),
-                nn.ReLU(inplace=True),
-                Residual(nn.Conv2d(chn, chn, self.kernel_size, padding=self.padding)),
+                getattr(nn, self.config.get('activation', 'ReLU'))(),
+                nn.Conv2d(chn, chn, self.kernel_size, padding=self.padding),
                 nn.BatchNorm2d(chn),
-                nn.ReLU(inplace=True),
-                Residual(PreNorm(chn, Attention(chn))),
-                # Reduce last dimension of image by 1
-                # The other dimension is left untouched
-                nn.MaxPool2d(kernel_size=(1, 2), stride=(1, 1))
+                getattr(nn, self.config.get('activation', 'ReLU'))(),
+                Residual(PreNorm(chn, LinearAttention(chn_idx, chn)))
             ]
             in_chn = chn
-
-        self.encoder = nn.Sequential(*layers)
-
-        self.fc_layer = nn.Conv2d(channels[-1], 1, kernel_size=1)
+        return nn.Sequential(*layers)
 
     def forward(self, inp):
         """Forward pass"""
-        pred_out = reduce(lambda x, y: y(x), self.encoder, inp)
-        pred_out = self.fc_layer(pred_out)
-        return torch.squeeze(pred_out)
+        # pred_out = reduce(lambda x, y: y(x), self.encoder, inp)
+        # pred_out = reduce(lambda x, y: y(x), self.decoder, pred_out)
+
+        # Store results of each block to realize skip connections
+        block_size = len(self.encoder) // len(self.channels)
+        output = {}
+        for idx in range(0, len(self.encoder), block_size):
+            for layer in range(idx, idx + block_size):
+                inp = self.encoder[layer](inp)
+            output[f'x{idx}'] = inp
+
+        for idx in range(0, len(self.decoder), block_size):
+            for layer in range(idx, idx + block_size):
+                inp = self.decoder[layer](inp)
+            skip_idx = len(self.encoder) - idx - (2 * block_size)
+            if skip_idx >= 0:
+                bn_idx = idx // block_size
+                inp = self.bn[bn_idx](inp + output[f'x{skip_idx}'])
+                # inp = self.act(inp)
+
+        pred_out = torch.squeeze(inp)
+
         ########################
         #### Simple version ####
         ########################
@@ -68,3 +98,5 @@ class ForceModel(BasicModel):
 
         # pred_out = pred_out.view(-1, self.force_samples, self.output_size)
         ########################
+
+        return pred_out
