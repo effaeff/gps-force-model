@@ -32,15 +32,11 @@ class Trainer(BasicTrainer):
             batch_size = np.shape(inp_scenario)[1]
             # summed_pred = np.empty((len(inp_scenario) * batch_size, out_size))
 
-            for batch_idx in tqdm(range(len(inp_scenario))):
-                pred_out = self.predict(inp_scenario[batch_idx])
-                pred_out = self.postprocess(pred_out, rays_scenario, batch_idx)
+            for batch_idx, inp_batch in enumerate(inp_scenario):
+                pred_out = self.predict(inp_batch)
 
-                pred_sum = pred_out.detach().cpu().numpy()
-                nb_pred_forces = batch_size
-                summed_pred[
-                    batch_idx * nb_pred_forces:batch_idx * nb_pred_forces + nb_pred_forces
-                ] = pred_sum
+                pred_out = self.postprocess_batch(pred_out, rays_scenario, batch_idx)
+
                 # pred_sum = pred_out.detach().cpu().numpy()
                 # nb_pred_forces = batch_size
                 # summed_pred[
@@ -49,7 +45,7 @@ class Trainer(BasicTrainer):
 
                 batch_loss = self.loss(
                     pred_out,
-                    torch.Tensor(out_scenario[batch_idx]).to(DEVICE)
+                    torch.from_numpy(out_scenario[batch_idx]).float().to(DEVICE)
                 )
 
                 self.optimizer.zero_grad()
@@ -118,7 +114,7 @@ class Trainer(BasicTrainer):
         return pred_out
 
     def postprocess(self, data, rays, batch_idx):
-        """Preprocessing method"""
+        """Preprocessing method using einsum for each force vector"""
         batch_size = len(data)
         force_samples = self.config['force_samples']
         pred_out_size = np.shape(data)[-1]
@@ -135,20 +131,47 @@ class Trainer(BasicTrainer):
                 )
             ).to(DEVICE).float()
 
-            f = torch.sum(
-                torch.einsum('ik, ikl->il', pred, ray_info),
-                dim=0
-            )
-            # print(f.size())
-
-
             forces[idx] = torch.sum(
                 torch.einsum('ik, ikl->il', pred, ray_info),
                 dim=0
             )
         return forces
 
-    def evaluate(self, inp, out, rays, batch_idx):
+    def postprocess_batch(self, pred_out, rays, batch_idx):
+        """Postprocess whole batch of predictions at once using ray directions"""
+        batch_size = len(pred_out)
+        force_samples = self.config['force_samples']
+        # Construct ray_info for complete batch by concatenating from the beginning
+        # until all tool revolutions of batch are covered
+        required_infos = batch_size * force_samples
+
+        start_idx = (batch_idx * batch_size * force_samples) % len(rays)
+
+        if (len(rays) - start_idx) >= required_infos:
+            ray_info = rays[start_idx:start_idx + required_infos]
+        else:
+            ray_info = rays[start_idx:]
+
+            covered = len(rays) - start_idx
+
+            full_concats = (required_infos - covered) // len(rays)
+            ray_info = np.concatenate(
+                (
+                    ray_info,
+                    *[rays for __ in range(full_concats)],
+                    rays[:(required_infos - (covered + full_concats * len(rays)))]
+                )
+            )
+        out_dim = self.output_size * self.nb_models
+        ray_info = np.reshape(ray_info, (batch_size, force_samples, out_dim, out_dim))
+
+        pred_out = torch.sum(
+            torch.einsum('bik, bikl->bil', pred_out, torch.from_numpy(ray_info).float().to(DEVICE)),
+            dim=1
+        )
+        return pred_out
+
+    def evaluate(self, inp, rays, batch_idx):
         """Prediction and error estimation for given input and output"""
         with torch.no_grad():
             # Switch to PyTorch's evaluation mode.
@@ -171,3 +194,6 @@ class Trainer(BasicTrainer):
                 )
             )
             return forces, (error * 100.0)
+            pred_out = self.postprocess_batch(pred_out, rays, batch_idx)
+
+            return pred_out
