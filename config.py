@@ -2,17 +2,18 @@
 
 RANDOM_SEED = 1234
 
-DATA_DIR = 'data/aggreg5'
-RESULTS_DIR = 'results'
-MODELS_DIR = 'models'
+DATA_DIR = '/raid/gps-forces/6_features'
+RESULTS_DIR = '/cephfs/gps-forces/results/noaggreg3-complex-skip'
+MODELS_DIR = '/cephfs/gps-forces/models/noaggreg3-complex-skip'
 PARAMS = f'{DATA_DIR}/LHS_Final_new.xlsx'
 
-INPUT_SIZE = 6
+INPUT_SIZE = 3
 OUTPUT_SIZE = 3
 TARGET_OUTPUT_SIZE = 3
+NB_MODELS = 1
 STEPY = 75
 EDGES = 2
-BATCH_SIZE = 32
+BATCH_SIZE = 1024
 N_WINDOW = 16
 
 K_C = 272.94663445441347
@@ -29,8 +30,10 @@ data_config = {
     'results_dir': RESULTS_DIR,
     'params': PARAMS,
     'excel_sheet': 'LHS_new',
-    'scaler': ['x_scaler.scal', 'y_scaler.scal'],
-    'test_size': 0.4, # Half of the test set is used for validation
+    # 'scaler': ['x_standard.scal', 'y_standard.scal'],
+    # 'scaler': ['x_minmax.scal', 'y_minmax.scal'],
+    'scaler': 'minmax.scal',
+    'test_size': 0.2, # Half of the test set is used for validation
     'negate': [-1, 1, 1],
     'batch_size': BATCH_SIZE,
     'n_window': N_WINDOW,
@@ -52,19 +55,19 @@ data_config = {
 model_config = {
     'models_dir': MODELS_DIR,
     'activation': 'ReLU',
-    'nb_units': 100,
-    'nb_layers': 2,
     'kernel_size': 3,
     'padding': 1,
-    'dropout_rate': 0.5,
+    'nb_models': NB_MODELS,
+    'channels': [32, 64, 128],
     'batch_size': BATCH_SIZE,
     'input_size': INPUT_SIZE,
     'output_size': OUTPUT_SIZE,
     'target_output_size': TARGET_OUTPUT_SIZE,
     'init': 'kaiming_normal',
     'learning_rate': 0.0001,
-    'max_iter': 50,
-    'reg_lambda': 0.01,
+    'max_iter': 200,
+    # 'reg_lambda': 0.0001,
+    'reg_lambda': 0,
     'loss': 'MSELoss',
     'force_samples': STEPY * EDGES,
     'random_seed': RANDOM_SEED

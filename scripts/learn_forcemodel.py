@@ -14,7 +14,8 @@ from config import (
     model_config,
     DATA_DIR,
     RESULTS_DIR,
-    MODELS_DIR
+    MODELS_DIR,
+    NB_MODELS
 )
 
 def main():
@@ -23,12 +24,14 @@ def main():
 
     data_processor = DataProcessor(data_config)
     model = nn.DataParallel(ForceModel(model_config))
+    # model = [nn.DataParallel(ForceModel(model_config)) for __ in range(NB_MODELS)]
 
     trainer = Trainer(model_config, model, data_processor)
     get_batches_fn = data_processor.get_next_batches
     trainer.get_batches_fn = get_batches_fn
 
-    trainer.train(validate_every=5, save_every=1)
+    # trainer.validate(-1, True)
+    trainer.train(validate_every=1, save_every=1)
 
 if __name__ == "__main__":
     main()
