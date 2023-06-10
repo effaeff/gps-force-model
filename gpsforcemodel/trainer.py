@@ -17,19 +17,20 @@ class Trainer(BasicTrainer):
     def learn_from_epoch(self, epoch_idx, verbose):
         """Training method"""
         epoch_loss = 0
-        nb_scenarios = 0
-        inp_scenario, out_scenario, rays_scenario = self.get_batches_fn()
+        inp_scenario, out_scenario, rays_scenario, nb_scenarios = self.get_batches_fn()
 
-        out_size = np.shape(out_scenario)[-1]
-        plot_out = np.reshape(out_scenario, (-1, out_size))
-        plot_pred = None
+        # out_size = np.shape(out_scenario)[-1]
+        # plot_out = np.reshape(out_scenario, (-1, out_size))
+        # plot_pred = None
 
         if verbose:
             pbar = tqdm(total=nb_scenarios, desc=f'Epoch {epoch_idx}', unit='scenario')
+
+        scenario_idx = 0
         while inp_scenario.any():
             force_samples = self.config['force_samples']
             batch_size = np.shape(inp_scenario)[1]
-            summed_pred = np.empty((len(inp_scenario) * batch_size, out_size))
+            # summed_pred = np.empty((len(inp_scenario) * batch_size, out_size))
 
             for batch_idx in tqdm(range(len(inp_scenario))):
                 pred_out = self.predict(inp_scenario[batch_idx])
@@ -40,6 +41,11 @@ class Trainer(BasicTrainer):
                 summed_pred[
                     batch_idx * nb_pred_forces:batch_idx * nb_pred_forces + nb_pred_forces
                 ] = pred_sum
+                # pred_sum = pred_out.detach().cpu().numpy()
+                # nb_pred_forces = batch_size
+                # summed_pred[
+                    # batch_idx * nb_pred_forces:batch_idx * nb_pred_forces + nb_pred_forces
+                # ] = pred_sum
 
                 batch_loss = self.loss(
                     pred_out,
@@ -52,8 +58,8 @@ class Trainer(BasicTrainer):
 
                 epoch_loss += batch_loss.item()
 
-            inp_scenario, out_scenario, rays_scenario = self.get_batches_fn()
-            nb_scenarios += 1
+            epoch_loss /= len(inp_scenario)
+
             if verbose:
                 pbar.set_postfix(
                     epoch_loss=epoch_loss
@@ -62,32 +68,35 @@ class Trainer(BasicTrainer):
 
             # self.validate(epoch_idx, True, f'{scenario_idx:03d}')
 
-            if nb_scenarios == 1:
-                plot_pred = summed_pred
+            inp_scenario, out_scenario, rays_scenario, __ = self.get_batches_fn()
+            scenario_idx += 1
+
+            # if nb_scenarios == 1:
+                # plot_pred = summed_pred
 
         epoch_loss /= nb_scenarios
 
-        __, axs = plt.subplots(np.shape(plot_out)[-1], 1)
-        for idx in range(np.shape(plot_out)[-1]):
-            axs[idx].plot(
-                plot_pred[len(plot_pred) // 2:len(plot_pred) // 2 + 1000, idx],
-                label='Pred'
-            )
-            axs[idx].plot(
-                plot_out[len(plot_out) // 2:len(plot_out) // 2 + 1000, idx],
-                label='Ref'
-            )
-            axs[idx].legend()
-        plt.savefig(
-            '{}/epoch{}_loss={}_pred.png'.format(
-                self.results_dir,
-                self.current_epoch,
-                epoch_loss
-            )
-        )
         if verbose:
             pbar.close()
 
+        # __, axs = plt.subplots(np.shape(plot_out)[-1], 1)
+        # for idx in range(np.shape(plot_out)[-1]):
+            # axs[idx].plot(
+                # plot_pred[len(plot_pred) // 2:len(plot_pred) // 2 + 1000, idx],
+                # label='Pred'
+            # )
+            # axs[idx].plot(
+                # plot_out[len(plot_out) // 2:len(plot_out) // 2 + 1000, idx],
+                # label='Ref'
+            # )
+            # axs[idx].legend()
+        # plt.savefig(
+            # '{}/epoch{}_loss={}_pred.png'.format(
+                # self.results_dir,
+                # self.current_epoch,
+                # epoch_loss
+            # )
+        # )
         return epoch_loss
 
     def predict(self, inp):
