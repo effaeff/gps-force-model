@@ -13,7 +13,8 @@ import scipy.signal
 import numpy as np
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.metrics import mean_squared_error
 from openpyxl import load_workbook
 from matplotlib import pyplot as plt
 from matplotlib import colors
@@ -125,35 +126,59 @@ class DataProcessor:
         ]
 
         # Init scaler
-        scaler_filenames = self.config.get('scaler', '')
-        scaler_exists = True
-        if scaler_filenames:
-            for filename in scaler_filenames:
-                scaler_exists &= os.path.isfile(filename)
-        else:
-            scaler_exists = False
-        self.x_scaler = StandardScaler(copy=False)
-        self.y_scaler = StandardScaler(copy=False)
-        if scaler_exists:
-            self.x_scaler = joblib.load(scaler_filenames[0])
-            self.y_scaler = joblib.load(scaler_filenames[1])
-            self.scaler_loaded = True
+        ##############################################
+        ################# Deprecated #################
+        ##############################################
+
+        # scaler_filenames = self.config.get('scaler', '')
+        # scaler_exists = True
+        # if scaler_filenames:
+            # for filename in scaler_filenames:
+                # scaler_exists &= os.path.isfile(filename)
+        # else:
+            # scaler_exists = False
+        # if 'standard' in scaler_filenames[0]:
+            # self.x_scaler = StandardScaler(copy=False)
+            # self.y_scaler = StandardScaler(copy=False)
+        # else:
+            # self.x_scaler = MinMaxScaler(copy=False)
+            # self.y_scaler = MinMaxScaler(copy=False)
+        # if scaler_exists:
+            # self.x_scaler = joblib.load(scaler_filenames[0])
+            # self.y_scaler = joblib.load(scaler_filenames[1])
+            # self.scaler_loaded = True
+        # else:
+            # print("Loading full dataset to fit scaler")
+            # print("Fitting scaler...")
+            # for idx in tqdm(range(len(self.train_files))):
+                # x__ = np.load(
+                    # f'{self.data_dir}/'
+                    # f'finkeldey_sfb876_kf10_ae35_nr{self.train_numbers[idx]:03d}_features.npy'
+                # )[:, :self.input_size]
+                # y__ = np.load(
+                    # f'{self.data_dir}/'
+                    # f'finkeldey_sfb876_kf10_ae35_nr{self.train_numbers[idx]:03d}_target.npy'
+                # )
+                # self.x_scaler.partial_fit(x__)
+                # self.y_scaler.partial_fit(y__)
+            # joblib.dump(self.x_scaler, scaler_filenames[0])
+            # joblib.dump(self.y_scaler, scaler_filenames[1])
+        ##############################################
+
+        # Now, only use scaler for features
+        scaler_fname = self.config.get('scaler', '')
+        self.x_scaler = (
+            StandardScaler(copy=False) if 'standard' in scaler_fname else
+            MinMaxScaler(copy=False)
+        )
+        if os.path.isfile(scaler_fname):
+            self.x_scaler = joblib.load(scaler_fname)
         else:
             print("Loading full dataset to fit scaler")
-            print("Fitting scaler...")
-            for idx in tqdm(range(len(self.train_files))):
-                x__ = np.load(
-                    f'{self.data_dir}/'
-                    f'finkeldey_sfb876_kf10_ae35_nr{self.train_numbers[idx]:03d}_features_aggreg.npy'
-                )
-                y__ = np.load(
-                    f'{self.data_dir}/'
-                    f'finkeldey_sfb876_kf10_ae35_nr{self.train_numbers[idx]:03d}_target_aggreg.npy'
-                )
+            for __, train_fname in enumerate(tqdm(self.train_files)):
+                x__ = np.load(f'{self.data_dir}/{train_fname}')[:, :self.input_size]
                 self.x_scaler.partial_fit(x__)
-                self.y_scaler.partial_fit(y__)
-            joblib.dump(self.x_scaler, 'x_scaler.scal')
-            joblib.dump(self.y_scaler, 'y_scaler.scal')
+            joblib.dump(self.x_scaler, scaler_fname)
 
         self.scenario_idx = 0
 
@@ -284,9 +309,9 @@ class DataProcessor:
         )
 
         y__ = np.reshape(
-            self.y_scaler.transform(
-                y__[:(len(y__) // batch_size * batch_size)]
-            ),
+            # self.y_scaler.transform(
+            y__[:(len(y__) // batch_size * batch_size)],
+            # ),
             (-1, self.batch_size, y__.shape[-1])
         )
 
