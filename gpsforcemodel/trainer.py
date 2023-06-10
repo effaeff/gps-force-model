@@ -14,7 +14,7 @@ class Trainer(BasicTrainer):
         self.output_size = config['output_size']
         self.nb_models = config.get('nb_models', 1)
 
-    def learn_from_epoch(self, epoch_idx):
+    def learn_from_epoch(self, epoch_idx, verbose):
         """Training method"""
         epoch_loss = 0
         nb_scenarios = 0
@@ -24,6 +24,8 @@ class Trainer(BasicTrainer):
         plot_out = np.reshape(out_scenario, (-1, out_size))
         plot_pred = None
 
+        if verbose:
+            pbar = tqdm(total=nb_scenarios, desc=f'Epoch {epoch_idx}', unit='scenario')
         while inp_scenario.any():
             force_samples = self.config['force_samples']
             batch_size = np.shape(inp_scenario)[1]
@@ -52,6 +54,13 @@ class Trainer(BasicTrainer):
 
             inp_scenario, out_scenario, rays_scenario = self.get_batches_fn()
             nb_scenarios += 1
+            if verbose:
+                pbar.set_postfix(
+                    epoch_loss=epoch_loss
+                )
+                pbar.update(1)
+
+            # self.validate(epoch_idx, True, f'{scenario_idx:03d}')
 
             if nb_scenarios == 1:
                 plot_pred = summed_pred
@@ -76,6 +85,9 @@ class Trainer(BasicTrainer):
                 epoch_loss
             )
         )
+        if verbose:
+            pbar.close()
+
         return epoch_loss
 
     def predict(self, inp):
