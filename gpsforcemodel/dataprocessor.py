@@ -48,12 +48,13 @@ class DataProcessor:
         self.sync_axis = self.config['sync_axis']
         self.force_samples = self.edges * self.stepy
         self.data_dir = self.config['data_dir']
+        self.results_dir = self.config['results_dir']
 
         # Get pathnames of files
         files = sorted(
             [
                 fname for fname in os.listdir(self.data_dir)
-                if fname.endswith('features_aggreg.npy')
+                if fname.endswith('features.npy')
             ], key=lambda x: int(re.search('\d+', x.split('_')[4]).group())
         )
         # files = glob.glob(os.path.join(self.config['data_dir'], '*.db'))
@@ -230,14 +231,13 @@ class DataProcessor:
             self.train_files, self.train_numbers = zip(*train)
 
             # Signal to trainer that current epoch is finished
-            return np.empty(0), np.empty(0), np.empty(0)
+            return np.empty(0), np.empty(0), np.empty(0), np.empty(0)
 
         # Select next scenario of current epoch based on self.scenario_idx
-        print("Scenario {}/{}: {}".format(
-            self.scenario_idx + 1,
-            len(self.train_files),
-            self.train_files[self.scenario_idx]
-        ))
+        # print(
+            # f"Scenario {self.scenario_idx + 1}/{len(self.train_files)}: "
+            # f"Number {self.train_numbers[self.scenario_idx]}"
+        # )
 
         # Bachify current scenario
         x__, y__, rays = self.prepare_batches(
@@ -246,7 +246,7 @@ class DataProcessor:
         )
         self.scenario_idx += 1
 
-        return x__, y__, rays
+        return x__, y__, rays, len(self.train_files)
 
     def prepare_batches(self, filename, number):
         """Load, aggregate, truncate, scale and reshape preprocessed and saved data"""
@@ -990,59 +990,162 @@ class DataProcessor:
             force_idx += 1
         return forces
 
-    def predict(self, data_inp, data_out, rays, evaluation):
-        """Capsuled prediction method using data and evaluation method"""
-        total_error = 0
-        total_pred = []
-        for batch_idx, __ in enumerate(data_inp):
-            inp, out = data_inp[batch_idx], data_out[batch_idx]
-            pred_out, error = evaluation(inp, out, rays, batch_idx)
-            total_error += error
-
-            pred_npy = pred_out.cpu().numpy()
-
-            for value in pred_npy[:, self.sync_axis]:
-                total_pred.append(value)
-
-        total_error /= len(data_inp)
-
-        return total_pred, total_error
-
-    def validate(self, evaluation, __, epoch_id):
+    def validate(self, evaluation, epoch_id, save_eval, save_suffix):
         """Validation and visualization"""
-        total_errors = np.empty(len(self.val_files))
+        total_errors = np.empty((len(self.val_files), self.target_output_size))
+
+        eval_path = f'{self.results_dir}/epoch{epoch_id:03d}'
+        if not os.path.exists(eval_path):
+            os.makedirs(eval_path)
+
         print("Start validation...")
         for idx in tqdm(range(len(self.val_files))):
             x__, y__, rays = self.prepare_batches(self.val_files[idx], self.val_numbers[idx])
 
-            reference = np.reshape(y__, (-1, self.target_output_size))
+            target = np.reshape(y__, (-1, self.target_output_size))
+            pred = np.empty(target.shape)
 
-            total_pred, total_error = self.predict(
-                x__,
-                y__,
-                rays,
-                evaluation
-            )
+            # Error for each force direction separately
+            error = np.zeros(self.target_output_size)
+            for batch_idx, inp in enumerate(x__):
+                out = y__[batch_idx]
+                pred_out = evaluation(inp, rays, batch_idx).cpu().numpy()
 
-            to_save = np.array([total_pred, reference[:, self.sync_axis]])
-            save_str = "{}/number{}_epoch{}_error{}".format(
-                self.config['results_dir'],
-                self.val_numbers[idx],
-                epoch_id,
-                total_error
-            )
-            tdms.write_tdms(to_save, ['pred', 'ref'], 'Recorder', save_str + ".tdms")
+                start_idx = batch_idx * self.batch_size
+                pred[start_idx:start_idx + self.batch_size] = pred_out
 
-            total_errors[idx] = total_error
-            # if epoch_id != -1:
-                # plot(
-                    # [
-                        # total_pred[len(total_pred) // 2:len(total_pred) // 2 + 100],
-                        # reference[len(reference) // 2:len(reference) // 2 + 100, self.sync_axis]
-                    # ],
-                    # ['Prediction', 'Reference'],
-                    # save_str + ".png"
+                for out_idx in range(self.target_output_size):
+                    # Normalized root mean squared error
+                    error[out_idx] += math.sqrt(
+                        mean_squared_error(out[:, out_idx], pred_out[:, out_idx])
+                    ) / np.ptp(out[:, out_idx]) * 100.0
+
+            # Average over batches
+            error /= self.batch_size
+            # Average over force directions
+            # error = error.mean()
+            total_errors[idx] = error
+
+            if save_eval:
+                # Save pred and target for each scenario
+
+                # Get substeps
+                substeps = self.parameter_values[self.val_numbers[idx]][-1]
+                # Get spindle speed
+                spsp = self.parameter_values[self.val_numbers[idx]][0]
+                fz = self.parameter_values[self.val_numbers[idx]][1]
+                alpha = self.parameter_values[self.val_numbers[idx]][2]
+
+                sample_freq = substeps * ((spsp / 60) * 2)
+
+                np.save(
+                    f'{eval_path}/{self.val_numbers[idx]:03d}_error_{error.mean():.2f}_{save_suffix}.npy',
+                    np.array([target, pred])
+                )
+
+                # Plot part of pred and target for quick inspection
+                # __, axs = plt.subplots(self.target_output_size, 3)
+                fig = plt.figure()
+                fig.suptitle(
+                    f"Spindle speed: {spsp} rmp, fz: {fz} mm, Inclination angle: {alpha}°\n"
+                    f"NRMSE: {error.mean():.2f} % +- {error.std():.2f} %"
+                )
+                big_ax = fig.add_subplot(4, 1, 1)
+                axs = [fig.add_subplot(4, 3, 4)]
+                for plot_idx in range(5, 13):
+                    axs.append(fig.add_subplot(4, 3, plot_idx, sharex=axs[plot_idx-5]) )
+                axs = np.reshape(axs, (3, 3))
+
+                time = np.array([1/sample_freq * sample for sample, __ in enumerate(target)])
+
+                ylabels = [r'F$_x$ in N', r'F$_y$ in N', r'F$_z$ in N']
+
+                big_ax.plot(time, target[:, self.sync_axis], linewidth=1, label="Target")
+                big_ax.plot(time, pred[:, self.sync_axis], linewidth=1, label="Prediction")
+                big_ax.grid(True, linewidth=0.4, zorder=0, linestyle='-', which='major')
+                big_ax.spines['top'].set_visible(False)
+                big_ax.spines['right'].set_visible(False)
+                big_ax.set_xlabel("Time in s")
+                big_ax.set_ylabel(ylabels[self.sync_axis])
+
+                start_idx = len(target) // 4
+
+                for part in range(3):
+                    for out_idx in range(self.target_output_size):
+                        axs[out_idx, part].plot(
+                            # time[start_idx:start_idx + substeps*3],
+                            target[start_idx:start_idx + substeps*3, out_idx],
+                            linewidth=1,
+                        )
+                        axs[out_idx, part].plot(
+                            # time[start_idx:start_idx + substeps*3],
+                            pred[start_idx:start_idx + substeps*3, out_idx],
+                            linewidth=1
+                        )
+                        axs[out_idx, part].grid(True, linewidth=0.4, zorder=0, linestyle='-', which='major')
+                        axs[out_idx, 0].set_ylabel(ylabels[out_idx])
+                        axs[out_idx, part].spines['top'].set_visible(False)
+                        axs[out_idx, part].spines['right'].set_visible(False)
+                        if out_idx != 2:
+                            axs[out_idx, part].tick_params(
+                                axis='both',
+                                which='both',
+                                bottom=False,
+                                top=False,
+                                labelbottom=False,
+                                left=True,
+                                right=False,
+                                labelleft=True
+                            )
+                        else:
+                            axs[out_idx, part].set_xlabel("Samples")
+                    start_idx += (len(target) // 4)
+
+                big_ax.legend(
+                    bbox_to_anchor=(0., 1.02, 1., .102),
+                    loc='lower left',
+                    ncol=2,
+                    # mode="expand",
+                    borderaxespad=0.,
+                    frameon=False
+                )
+                plt.tight_layout()
+                fig.align_labels()
+                plt.savefig(f'{eval_path}/{self.val_numbers[idx]}_{save_suffix}.png', dpi=600)
+                plt.close()
+
+                ######################
+                ######## Old #########
+                ######################
+                # to_save = np.array([total_pred, reference[:, self.sync_axis]])
+                # save_str = "{}/number{}_error{}".format(
+                    # eval_path,
+                    # self.val_numbers[idx],
+                    # total_error
                 # )
+                # tdms.write_tdms(to_save, ['pred', 'ref'], 'Recorder', save_str + ".tdms")
+
+                # total_errors[idx] = total_error
+                # if epoch_id != -1:
+                    # plot(
+                        # [
+                            # total_pred[len(total_pred) // 2:len(total_pred) // 2 + 100],
+                            # reference[len(reference) // 2:len(reference) // 2 + 100, self.sync_axis]
+                        # ],
+                        # ['Prediction', 'Reference'],
+                        # save_str + ".png"
+                    # )
+                ######################
+
+
+        # Average over scenarios
+        print(
+            f"NRMSE:\t"
+            f"Fx: {total_errors.mean(axis=0)[0]:.2f} +- {total_errors.std(axis=0)[0]:.2f}\t"
+            f"Fy: {total_errors.mean(axis=0)[1]:.2f} +- {total_errors.std(axis=0)[1]:.2f}\t"
+            f"Fz: {total_errors.mean(axis=0)[2]:.2f} +- {total_errors.std(axis=0)[2]:.2f}\t"
+            f"Mean: {total_errors.mean():.2f} +- {total_errors.std():.2f}"
+        )
         return total_errors.mean(), total_errors.std()
 
     def infer(self, evaluation):

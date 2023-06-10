@@ -184,16 +184,7 @@ class Trainer(BasicTrainer):
             else:
                 self.model.eval()
             pred_out = self.predict(inp)
-            forces = self.postprocess(pred_out, rays, batch_idx)
 
-            # RMSE is the default accuracy metric
-            error = torch.sqrt(
-                self.loss(
-                    forces,
-                    torch.Tensor(out).to(DEVICE)
-                )
-            )
-            return forces, (error * 100.0)
             pred_out = self.postprocess_batch(pred_out, rays, batch_idx)
 
             return pred_out
