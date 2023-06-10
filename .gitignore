@@ -10,6 +10,7 @@ output/
 *.npz
 *.fls
 *.spl
+*.scal
 models/
 results/
 figures/
