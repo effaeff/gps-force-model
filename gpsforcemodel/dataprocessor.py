@@ -270,8 +270,19 @@ class DataProcessor:
             f'finkeldey_sfb876_kf10_ae35_nr{number:03d}_target.npy'.format(filename)
         )
 
+        # If batches are shuffled, positional connection to rays,
+        # which are only present for one tool revolution, gets lost
+        # Therefore, rays have to be expanded to cover the whole time series, unfortunately
+        # First, reshape to consider force_samples
+        rays = np.reshape(rays, (-1, self.force_samples, rays.shape[-1]))
+        # Then, concatenate rays to reach required number of samples obtained from y__
+        required_concats = int(len(y__) // len(rays))
+        rest = int(len(y__) % len(rays))
 
+        rays = np.concatenate([rays for __ in range(required_concats)])
 
+        if rest != 0:
+            rays = np.concatenate((rays, rays[:rest]))
 
         # Store features of all force samples in one image-like structure
         # As a consequence, the shape of each batch should be (batch_size, force_samples, input_size)
@@ -281,10 +292,12 @@ class DataProcessor:
         # Scale and reshape into images of size (force_samples, input_size)
         x__ = np.reshape(
             self.x_scaler.transform(
-                x__[:(len(x__) // (batch_size * self.force_samples) * (batch_size * self.force_samples))]
+                x__#[:(len(x__) // (batch_size * self.force_samples) * (batch_size * self.force_samples))]
             ),
-            (-1, self.batch_size, 1, self.force_samples, self.input_size)
+            (-1, self.force_samples, self.input_size)
         )
+        rays = np.reshape(rays, (-1, self.force_samples, rays.shape[-1]))
+
         ####################################################################
         ######## Additional sliding window for subsequence sampling ########
         ####################################################################
