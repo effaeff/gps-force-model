@@ -37,6 +37,8 @@ class ForceModel(BasicModel):
         self.channels = config.get('channels', [32, 64, 128])
         self.force_samples = config['force_samples']
 
+        self.drop_rate = config.get('drop_rate', 0)
+
         self.encoder = self.make_layers(self.input_size if WINDOW else 1, self.channels)
         self.decoder = self.make_layers(
             self.channels[-1],
@@ -76,6 +78,7 @@ class ForceModel(BasicModel):
                 ),
                 nn.BatchNorm2d(chn),
                 getattr(nn, self.config.get('activation', 'ReLU'))(),
+                nn.Dropout2d(self.drop_rate),
                 TemporalPad(self.padding[chn_idx]) if WINDOW else nn.Identity(),
                 nn.Conv2d(
                     chn,
@@ -87,6 +90,7 @@ class ForceModel(BasicModel):
                 nn.BatchNorm2d(chn),
                 getattr(nn, self.config.get('activation', 'ReLU'))(),
                 Residual(PreNorm(chn, LinearAttention(chn_idx, chn))),
+                nn.Dropout2d(self.drop_rate),
             ]
             in_chn = chn
         return nn.Sequential(*layers)
