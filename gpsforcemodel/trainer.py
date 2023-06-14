@@ -54,7 +54,11 @@ class Trainer(BasicTrainer):
                 self.optimizer.step()
 
                 epoch_loss += batch_loss.item()
-
+                if verbose:
+                    pbar.set_postfix(
+                        mean_batch_loss=(epoch_loss / (scenario_idx * len(inp_scenario) + batch_idx + 1)),
+                        epoch_loss=epoch_loss
+                    )
 
             if verbose:
                 pbar.update(1)
@@ -115,27 +119,32 @@ class Trainer(BasicTrainer):
         """Postprocess whole batch of predictions at once using ray directions"""
         batch_size = len(pred_out)
         force_samples = self.config['force_samples']
+        ############################################################
+        #### The following was basically moved to dataprocessor ####
+        ############################################################
         # Construct ray_info for complete batch by concatenating from the beginning
         # until all tool revolutions of batch are covered
-        required_infos = batch_size * force_samples
+        # required_infos = batch_size * force_samples
 
-        start_idx = (batch_idx * batch_size * force_samples) % len(rays)
+        # start_idx = (batch_idx * batch_size * force_samples) % len(rays)
 
-        if (len(rays) - start_idx) >= required_infos:
-            ray_info = rays[start_idx:start_idx + required_infos]
-        else:
-            ray_info = rays[start_idx:]
+        # if (len(rays) - start_idx) >= required_infos:
+            # ray_info = rays[start_idx:start_idx + required_infos]
+        # else:
+            # ray_info = rays[start_idx:]
 
-            covered = len(rays) - start_idx
+            # covered = len(rays) - start_idx
 
-            full_concats = (required_infos - covered) // len(rays)
-            ray_info = np.concatenate(
-                (
-                    ray_info,
-                    *[rays for __ in range(full_concats)],
-                    rays[:(required_infos - (covered + full_concats * len(rays)))]
-                )
-            )
+            # full_concats = (required_infos - covered) // len(rays)
+            # ray_info = np.concatenate(
+                # (
+                    # ray_info,
+                    # *[rays for __ in range(full_concats)],
+                    # rays[:(required_infos - (covered + full_concats * len(rays)))]
+                # )
+            # )
+        ray_info = rays[batch_idx]
+        ############################################################
         out_dim = self.output_size * self.nb_models
         ray_info = np.reshape(ray_info, (batch_size, force_samples, out_dim, out_dim))
 
