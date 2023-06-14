@@ -251,7 +251,7 @@ class DataProcessor:
 
         return x__, y__, rays, len(self.train_files)
 
-    def prepare_batches(self, filename, number):
+    def prepare_batches(self, filename, number, train=True):
         """Load, aggregate, truncate, scale and reshape preprocessed and saved data"""
         # stepx = 2 * self.parameter_values[number][-1]
         # batch_size = int(self.config['batched_turnarounds'] * stepx * self.feed_samples)
@@ -1032,7 +1032,7 @@ class DataProcessor:
             force_idx += 1
         return forces
 
-    def validate(self, evaluation, epoch_id, save_eval, save_suffix):
+    def validate(self, evaluation, epoch_id, save_eval, verbose, save_suffix):
         """Validation and visualization"""
         total_errors = np.empty((len(self.val_files), self.target_output_size))
 
@@ -1040,9 +1040,12 @@ class DataProcessor:
         if not os.path.exists(eval_path):
             os.makedirs(eval_path)
 
-        print("Start validation...")
-        for idx in tqdm(range(len(self.val_files))):
-            x__, y__, rays = self.prepare_batches(self.val_files[idx], self.val_numbers[idx])
+        eval_range = range(len(self.val_files))
+        if verbose:
+            print("Start validation...")
+            eval_range = tqdm(eval_range)
+        for idx in eval_range:
+            x__, y__, rays = self.prepare_batches(self.val_files[idx], self.val_numbers[idx], False)
 
             target = np.reshape(y__, (-1, self.target_output_size))
             pred = np.empty(target.shape)
@@ -1189,13 +1192,14 @@ class DataProcessor:
 
 
         # Average over scenarios
-        print(
-            f"NRMSE:\t"
-            f"Fx: {total_errors.mean(axis=0)[0]:.2f} +- {total_errors.std(axis=0)[0]:.2f}\t"
-            f"Fy: {total_errors.mean(axis=0)[1]:.2f} +- {total_errors.std(axis=0)[1]:.2f}\t"
-            f"Fz: {total_errors.mean(axis=0)[2]:.2f} +- {total_errors.std(axis=0)[2]:.2f}\t"
-            f"Mean: {total_errors.mean():.2f} +- {total_errors.std():.2f}"
-        )
+        if verbose:
+            print(
+                f"NRMSE:\t"
+                f"Fx: {total_errors.mean(axis=0)[0]:.2f} +- {total_errors.std(axis=0)[0]:.2f}\t"
+                f"Fy: {total_errors.mean(axis=0)[1]:.2f} +- {total_errors.std(axis=0)[1]:.2f}\t"
+                f"Fz: {total_errors.mean(axis=0)[2]:.2f} +- {total_errors.std(axis=0)[2]:.2f}\t"
+                f"Mean: {total_errors.mean():.2f} +- {total_errors.std():.2f}"
+            )
         return total_errors.mean(), total_errors.std()
 
     def infer(self, evaluation):
