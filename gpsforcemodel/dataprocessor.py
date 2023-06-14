@@ -1101,7 +1101,8 @@ class DataProcessor:
                     ) / np.ptp(out[:, out_idx]) * 100.0
 
             # Average over batches
-            error /= self.batch_size
+            # For windowing effective batch size is batch_size * force_samples
+            error /= len(x__)
             # Average over force directions
             # error = error.mean()
             total_errors[idx] = error
