@@ -57,12 +57,9 @@ class Trainer(BasicTrainer):
 
 
             if verbose:
-                pbar.set_postfix(
-                    epoch_loss=epoch_loss
-                )
                 pbar.update(1)
 
-            # self.validate(epoch_idx, True, f'{scenario_idx:03d}')
+            # self.validate(epoch_idx, True, verbose, f'{scenario_idx:03d}')
 
             inp_scenario, out_scenario, rays_scenario, __ = self.get_batches_fn()
             scenario_idx += 1
