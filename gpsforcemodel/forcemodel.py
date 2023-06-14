@@ -4,8 +4,27 @@ from functools import reduce
 import numpy as np
 
 from pytorchutils.globals import nn, torch, DEVICE
-from pytorchutils.layers import Attention, LinearAttention, Residual, PreNorm
+from pytorchutils.layers import (
+    Attention,
+    LinearAttention,
+    LinearAttention3d,
+    Residual,
+    PreNorm,
+    PreNorm3d
+)
 from pytorchutils.basic_model import BasicModel
+
+from config import WINDOW
+
+class TemporalPad(nn.Module):
+    """Left pad second to last dimension of input with zeros"""
+    def __init__(self, pad_size):
+        super().__init__()
+        self.pad_size = pad_size
+
+    def forward(self, inp):
+        """Forward pass"""
+        return nn.functional.pad(inp, (0, 0, self.pad_size, 0), 'constant', 0)
 
 class ForceModel(BasicModel):
     """Class for model"""
@@ -14,23 +33,21 @@ class ForceModel(BasicModel):
 
         self.kernel_size = config.get('kernel_size', 3)
         self.padding = config.get('padding', 1)
+        self.dilation = config.get('dilation', 1)
         self.channels = config.get('channels', [32, 64, 128])
         self.force_samples = config['force_samples']
 
-        self.encoder = self.make_layers(1, self.channels)
+        self.encoder = self.make_layers(self.input_size if WINDOW else 1, self.channels)
         self.decoder = self.make_layers(
             self.channels[-1],
-            (list(reversed(self.channels))[1:] + [1])
+            (list(reversed(self.channels))[1:] + ([self.output_size] if WINDOW else [1]))
         )
 
         self.bn = nn.ModuleList(
             [
-                nn.BatchNorm2d(self.channels[1]),
-                nn.BatchNorm2d(self.channels[0])
+                nn.BatchNorm2d(chn) for chn in list(reversed(self.channels))[1:]
             ]
         )
-
-        # self.act = getattr(nn, self.config.get('activation', 'ReLU'))(inplace=True)
 
         ########################
         #### Simple version ####
@@ -49,13 +66,27 @@ class ForceModel(BasicModel):
         layers = []
         for chn_idx, chn in enumerate(channels):
             layers += [
-                nn.Conv2d(in_chn, chn, self.kernel_size, padding=self.padding),
+                TemporalPad(self.padding[chn_idx]) if WINDOW else nn.Identity(),
+                nn.Conv2d(
+                    in_chn,
+                    chn,
+                    kernel_size=(self.kernel_size, (1 if WINDOW else self.kernel_size)),
+                    dilation=(self.dilation[chn_idx], 1),
+                    padding=(0 if WINDOW else self.padding)
+                ),
                 nn.BatchNorm2d(chn),
                 getattr(nn, self.config.get('activation', 'ReLU'))(),
-                nn.Conv2d(chn, chn, self.kernel_size, padding=self.padding),
+                TemporalPad(self.padding[chn_idx]) if WINDOW else nn.Identity(),
+                nn.Conv2d(
+                    chn,
+                    chn,
+                    kernel_size=(self.kernel_size, (1 if WINDOW else self.kernel_size)),
+                    dilation=(self.dilation[chn_idx], 1),
+                    padding=(0 if WINDOW else self.padding)
+                ),
                 nn.BatchNorm2d(chn),
                 getattr(nn, self.config.get('activation', 'ReLU'))(),
-                Residual(PreNorm(chn, LinearAttention(chn_idx, chn)))
+                Residual(PreNorm(chn, LinearAttention(chn_idx, chn))),
             ]
             in_chn = chn
         return nn.Sequential(*layers)
@@ -80,7 +111,6 @@ class ForceModel(BasicModel):
             if skip_idx >= 0:
                 bn_idx = idx // block_size
                 inp = self.bn[bn_idx](inp + output[f'x{skip_idx}'])
-                # inp = self.act(inp)
 
         pred_out = torch.squeeze(inp)
 

@@ -7,6 +7,7 @@ RESULTS_DIR = '/cephfs/gps-forces/results/noaggreg3-complex-skip'
 MODELS_DIR = '/cephfs/gps-forces/models/noaggreg3-complex-skip'
 PARAMS = f'{DATA_DIR}/LHS_Final_new.xlsx'
 
+WINDOW = False
 INPUT_SIZE = 3
 OUTPUT_SIZE = 3
 TARGET_OUTPUT_SIZE = 3
@@ -14,7 +15,42 @@ NB_MODELS = 1
 STEPY = 75
 EDGES = 2
 BATCH_SIZE = 1024
-N_WINDOW = 16
+
+####################################
+######### Temporal shizzle #########
+####################################
+N_WINDOW = 7
+KERNEL_SIZE = 3
+DILATE = True
+DILATION_BASE = 2
+if DILATE:
+    # Calculate the required number of layers for full coverage of window
+    NB_LAYERS = int(np.ceil(
+        (np.log(((N_WINDOW - 1) * (DILATION_BASE - 1)) / (KERNEL_SIZE - 1) + 1) / np.log(DILATION_BASE))
+    ))
+    # Exponentially increasing dilation
+    # This also exponentially increases receptive field of stacked convolutions
+    # and reduces the number of required layers for full coverage logarithmically
+    DILATION = [DILATION_BASE**idx for idx in range(NB_LAYERS)]
+else:
+    # If no dilation is used, required number of layers increase to ensure full coverage of window
+    # Therefore, nb_layers gets split between encoder and decoder
+    NB_LAYERS = int(np.ceil((N_WINDOW - 1) / (KERNEL_SIZE - 1)))
+    DILATION = [1 for __ in range(NB_LAYERS)]
+
+# Begin with 32 channels and increase exponentially with base 2 for each layer
+CHANNELS = [2**(5 + idx) for idx in range(NB_LAYERS)]
+# Left padding for each layer considering dilation and kernel_size
+PADDING = [d * (KERNEL_SIZE - 1) for d in DILATION]
+
+# Config for non-window model
+if not WINDOW:
+    NB_LAYERS = 3
+    DILATION = [1 for __ in range(NB_LAYERS)]
+    PADDING = 1
+    CHANNELS = [2**(5 + idx) for idx in range(NB_LAYERS)]
+
+####################################
 
 K_C = 272.94663445441347
 K_N = 344.1285160407239
@@ -55,14 +91,19 @@ data_config = {
 model_config = {
     'models_dir': MODELS_DIR,
     'activation': 'ReLU',
-    'kernel_size': 3,
-    'padding': 1,
     'nb_models': NB_MODELS,
-    'channels': [32, 64, 128],
+    # 'kernel_size': (KERNEL_SIZE, 1, 1),
+    # 'kernel_size': (KERNEL_SIZE, 1),
+    'kernel_size': KERNEL_SIZE,
+    'padding': PADDING,
+    'nb_layers': NB_LAYERS,
+    'dilation': DILATION,
+    'channels': CHANNELS,
     'batch_size': BATCH_SIZE,
     'input_size': INPUT_SIZE,
     'output_size': OUTPUT_SIZE,
     'target_output_size': TARGET_OUTPUT_SIZE,
+    'n_window': N_WINDOW,
     'init': 'kaiming_normal',
     'learning_rate': 0.0001,
     'max_iter': 200,

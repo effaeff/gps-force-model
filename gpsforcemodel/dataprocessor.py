@@ -22,6 +22,9 @@ from matplotlib.ticker import PercentFormatter
 import joblib
 # plt.switch_backend('Agg')
 
+from pytorchutils.globals import nn, torch
+from config import WINDOW, TARGET0
+
 
 class DataProcessor:
     """Class to wrapp preprocessing methods and store dataset"""
@@ -267,36 +270,11 @@ class DataProcessor:
             f'finkeldey_sfb876_kf10_ae35_nr{number:03d}_target.npy'.format(filename)
         )
 
-        # print(np.shape(x__))
-        # print(np.shape(y__))
 
-        # out_batch_size = batch_size #// self.force_samples
 
-        # x__, y__ = self.aggregate(x__, y__)
-        # x__ = np.reshape(
-            # self.x_scaler.transform(
-                # x__[:(len(x__) // (self.n_window * batch_size)) * self.n_window * batch_size]
-            # ),
-            # (-1, batch_size, self.n_window, np.shape(x__)[-1])
-        # )
-        # y__ = np.reshape(
-            # self.y_scaler.transform(
-                # y__[
-                    # :(
-                        # (len(y__) // ((self.n_window//self.force_samples) * batch_size)) *
-                        # (self.n_window//self.force_samples) * batch_size
-                    # )
-                # ]
-            # ),
-            # (-1, out_batch_size, self.n_window // self.force_samples, np.shape(y__)[-1])
-        # )
-
-        ################
-        ### New idea ###
-        ################
 
         # Store features of all force samples in one image-like structure
-        # As a consequence, the shape of each batch should be (B, force_samples, input_size)
+        # As a consequence, the shape of each batch should be (batch_size, force_samples, input_size)
 
         substeps = self.parameter_values[number][-1]
 
@@ -307,18 +285,82 @@ class DataProcessor:
             ),
             (-1, self.batch_size, 1, self.force_samples, self.input_size)
         )
+        ####################################################################
+        ######## Additional sliding window for subsequence sampling ########
+        ####################################################################
 
-        y__ = np.reshape(
-            # self.y_scaler.transform(
-            y__[:(len(y__) // batch_size * batch_size)],
-            # ),
-            (-1, self.batch_size, y__.shape[-1])
+        # Sliding window only for training
+        # if train:
+            # x__ = np.array(
+                # [x__[idx:idx + self.n_window] for idx in range(0, len(x__) - self.n_window + 1, 1)]
+            # )
+            # y__ = np.array(
+                # [y__[idx:idx + self.n_window] for idx in range(0, len(y__) - self.n_window + 1, 1)]
+            # )
+            # rays = np.array(
+                # [rays[idx:idx + self.n_window] for idx in range(0, len(y__) - self.n_window + 1, 1)]
+            # )
+        # else:
+        if WINDOW:
+            x__ = np.reshape(
+                x__[:len(x__) // self.n_window * self.n_window],
+                (-1, self.n_window, self.force_samples, self.input_size)
+            )
+            y__ = np.reshape(
+                y__[:len(y__) // self.n_window * self.n_window],
+                (-1, self.n_window, y__.shape[-1])
+            )
+            rays = np.reshape(
+                rays[:len(rays) // self.n_window * self.n_window],
+                (-1, self.n_window, self.force_samples, rays.shape[-1])
+            )
+
+        ####################################################################
+
+        # Batchify
+        x__ = np.reshape(
+            x__[:len(x__) // self.batch_size * self.batch_size],
+            (-1, self.batch_size, *x__.shape[1:])
         )
+        if WINDOW:
+            y__ = np.reshape(
+                y__[:len(y__) // self.batch_size * self.batch_size],
+                (-1, self.n_window * self.batch_size, y__.shape[-1])
+            )
+            rays = np.reshape(
+                rays[:len(rays) // self.batch_size * self.batch_size],
+                (-1, self.n_window * self.batch_size, self.force_samples, rays.shape[-1])
+            )
+        else:
+            y__ = np.reshape(
+                y__[:len(y__) // self.batch_size * self.batch_size],
+                (-1, self.batch_size, y__.shape[-1])
+            )
+            rays = np.reshape(
+                rays[:len(rays) // self.batch_size * self.batch_size],
+                (-1, self.batch_size, self.force_samples, rays.shape[-1])
+            )
 
         ################
+        # There are 2 options:
+        # 1. Use input features als spatial dimension,
+        # leading to volumetric images requiring 3D convolutions
+        #
+        # 2. Or use input features as image channels
+        # leading to shape (-1, batch_size, input_size, n_window, force_samples)
+        #
+        if WINDOW:
+            # Go for option 2 for now
+            x__ = np.moveaxis(x__, -1, -3)
+        else:
+            x__ = np.reshape(x__, (-1, self.batch_size, 1, *x__.shape[2:]))
+
+        # print(x__.shape)
+        # print(y__.shape)
+        # print(rays.shape)
+        # quit()
 
         return x__, y__, rays
-
 
     def aggreg_all(self):
         """Aggregate full data set"""
@@ -1011,8 +1053,16 @@ class DataProcessor:
                 out = y__[batch_idx]
                 pred_out = evaluation(inp, rays, batch_idx).cpu().numpy()
 
-                start_idx = batch_idx * self.batch_size
-                pred[start_idx:start_idx + self.batch_size] = pred_out
+                # For windowing effective batch size is batch_size * n_window
+                start_idx = (
+                    batch_idx * self.batch_size * self.n_window if WINDOW else
+                    batch_idx * self.batch_size
+                )
+                end_idx = (
+                    start_idx + self.batch_size * self.n_window if WINDOW else
+                    start_idx + self.batch_size
+                )
+                pred[start_idx:end_idx] = pred_out
 
                 for out_idx in range(self.target_output_size):
                     # Normalized root mean squared error
