@@ -3,8 +3,8 @@
 RANDOM_SEED = 1234
 
 DATA_DIR = '/raid/gps-forces/6_features'
-RESULTS_DIR = '/cephfs/gps-forces/results/noaggreg3-complex-skip'
-MODELS_DIR = '/cephfs/gps-forces/models/noaggreg3-complex-skip'
+RESULTS_DIR = '/cephfs/gps-forces/results'
+MODELS_DIR = '/cephfs/gps-forces/models/complex-shuffle-target0-drop'
 PARAMS = f'{DATA_DIR}/LHS_Final_new.xlsx'
 
 WINDOW = False
@@ -60,6 +60,7 @@ M_N = 0.27309617279279746
 M_T = 0.3288884071807737
 
 data_config = {
+    'random_seed': RANDOM_SEED,
     'keys': ['t', 'fx', 'fy', 'fz'],
     'group': 'Recorder',
     'data_dir': DATA_DIR,
@@ -69,29 +70,30 @@ data_config = {
     # 'scaler': ['x_standard.scal', 'y_standard.scal'],
     # 'scaler': ['x_minmax.scal', 'y_minmax.scal'],
     'scaler': 'minmax.scal',
-    'test_size': 0.2, # Half of the test set is used for validation
-    'negate': [-1, 1, 1],
+    'test_size': 0.2,
     'batch_size': BATCH_SIZE,
     'n_window': N_WINDOW,
-    'aggreg': 5,
     'input_size': INPUT_SIZE,
-    'model_output_size': OUTPUT_SIZE,
-    'target_output_size': TARGET_OUTPUT_SIZE,
-    'sync_axis': 2,
     'stepy': STEPY,
     'edges': EDGES,
+    'aggreg': 5, # Not used
+    # Parameters which are required if multiple models are desired
+    'model_output_size': OUTPUT_SIZE,
+    'target_output_size': TARGET_OUTPUT_SIZE,
+    # The following parameters are for time series sync shit
+    'negate': [-1, 1, 1],
+    'sync_axis': 2,
     'force_params': [K_C, M_C, K_N, M_N, K_T, M_T],
     'mother_wavelet': 'mexh',
     'fz_freq_divider': 30,
     'nb_scales': 84,
-    'signif_lvl': 0.99,
-    'random_seed': RANDOM_SEED
+    'signif_lvl': 0.99
 }
 
 model_config = {
+    'random_seed': RANDOM_SEED,
     'models_dir': MODELS_DIR,
-    'activation': 'ReLU',
-    'nb_models': NB_MODELS,
+    'activation': 'ReLU', # Also tried PReLU and LeakyReLU
     # 'kernel_size': (KERNEL_SIZE, 1, 1),
     # 'kernel_size': (KERNEL_SIZE, 1),
     'kernel_size': KERNEL_SIZE,
@@ -102,14 +104,19 @@ model_config = {
     'batch_size': BATCH_SIZE,
     'input_size': INPUT_SIZE,
     'output_size': OUTPUT_SIZE,
-    'target_output_size': TARGET_OUTPUT_SIZE,
     'n_window': N_WINDOW,
-    'init': 'kaiming_normal',
-    'learning_rate': 0.0001,
-    'max_iter': 200,
-    # 'reg_lambda': 0.0001,
-    'reg_lambda': 0,
-    'loss': 'MSELoss',
     'force_samples': STEPY * EDGES,
-    'random_seed': RANDOM_SEED
+    'init': 'kaiming_normal',
+    'learning_rate': 0.0001, # Also tried 0.00001, was worse
+    'max_iter': 50,
+    'reg_lambda': 0.001,
+    'drop_rate': 0.2,
+    # 'reg_lambda': 0,
+    'loss': 'MSELoss',
+    # Early stopper stuff
+    'patience': 10,
+    'max_problem': False,
+    # Parameters which are required if multiple models are desired
+    'nb_models': NB_MODELS,
+    'target_output_size': TARGET_OUTPUT_SIZE,
 }
