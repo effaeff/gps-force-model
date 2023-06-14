@@ -255,7 +255,7 @@ class DataProcessor:
         """Load, aggregate, truncate, scale and reshape preprocessed and saved data"""
         # stepx = 2 * self.parameter_values[number][-1]
         # batch_size = int(self.config['batched_turnarounds'] * stepx * self.feed_samples)
-        batch_size = self.batch_size
+        # batch_size = self.batch_size
 
         x__ = np.load(
             f'{self.data_dir}/'
