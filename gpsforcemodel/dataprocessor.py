@@ -360,7 +360,15 @@ class DataProcessor:
                 (-1, self.batch_size, self.force_samples, rays.shape[-1])
             )
 
-        ################
+        if train:
+            batches = list(zip(x__, rays, y__))
+            np.random.shuffle(batches)
+            x__, rays, y__ = zip(*batches)
+
+            x__ = np.array(x__)
+            y__ = np.array(y__)
+            rays = np.array(rays)
+
         # There are 2 options:
         # 1. Use input features als spatial dimension,
         # leading to volumetric images requiring 3D convolutions
