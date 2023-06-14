@@ -298,6 +298,12 @@ class DataProcessor:
         )
         rays = np.reshape(rays, (-1, self.force_samples, rays.shape[-1]))
 
+        # Modify targets: if chip thickness is 0, no forces should be predicted
+        if TARGET0:
+            for sample_idx, __ in enumerate(y__):
+                if np.all(x__[sample_idx, :, 0]==0):
+                    y__[sample_idx] = np.array([0, 0, 0])
+
         ####################################################################
         ######## Additional sliding window for subsequence sampling ########
         ####################################################################
