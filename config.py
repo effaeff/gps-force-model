@@ -1,4 +1,5 @@
 """Config file"""
+import numpy as np
 
 RANDOM_SEED = 1234
 
@@ -7,7 +8,10 @@ RESULTS_DIR = '/cephfs/gps-forces/results'
 MODELS_DIR = '/cephfs/gps-forces/models/complex-shuffle-target0-drop'
 PARAMS = f'{DATA_DIR}/LHS_Final_new.xlsx'
 
+OPT = False
 WINDOW = False
+TARGET0 = True
+
 INPUT_SIZE = 3
 OUTPUT_SIZE = 3
 TARGET_OUTPUT_SIZE = 3
